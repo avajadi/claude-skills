@@ -1,0 +1,112 @@
+# macOS build, validation and packaging: a zip with universal (Apple silicon + Intel) VST3 and AU, and CLAP when
+# enabled.
+#
+# Run by hand (Actions > Release (macOS) > Run workflow) for a dev package as a downloadable artifact, or called by
+# release.yml for a tag. On a tag, the tag must match the version in CMakeLists.txt.
+name: Release (macOS)
+
+on:
+  workflow_dispatch:
+  workflow_call:
+
+# A literal group: in a called workflow, github.workflow is the caller's name, which would share its group.
+concurrency:
+  group: release-macos-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  macos:
+    # In a private repo, macOS minutes count ten times against the quota: a 15-minute run costs 150 of them.
+    runs-on: macos-15
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0 # tags, for the version string
+
+      - name: Load plugin settings
+        run: |
+          grep -vE '^[[:space:]]*(#|$)' packaging/plugin.env | tr -d '\r' >> "$GITHUB_ENV"
+          target=$(grep -E '^PLUGIN_TARGET=' packaging/plugin.env | tr -d '\r' | cut -d= -f2-)
+          echo "ARTEFACTS=build/release/${target}_artefacts/Release" >> "$GITHUB_ENV"
+
+      - name: Check version
+        run: |
+          version=$(sed -nE 's/^project\([[:space:]]*[A-Za-z0-9_]+[[:space:]]+VERSION[[:space:]]+([0-9.]+).*/\1/p' CMakeLists.txt)
+          echo "CMake project version: $version"
+          if [[ "$GITHUB_REF" == refs/tags/* && "${GITHUB_REF#refs/tags/}" != "v$version" ]]; then
+            echo "::error::Tag ${GITHUB_REF#refs/tags/} does not match the CMake project version $version"
+            exit 1
+          fi
+
+      - name: Install Ninja
+        run: brew install ninja
+
+      # Universal binaries for macOS 11 and later: CMakeLists.txt sets the architectures before project().
+      - name: Configure
+        run: cmake --preset release $CMAKE_EXTRA_ARGS
+
+      # -k 0: keep going after a failed file, so one run reports every compile error.
+      - name: Build
+        run: |
+          targets="${PLUGIN_TARGET}_VST3 ${PLUGIN_TARGET}_AU"
+          [[ "$BUILD_CLAP" == true ]] && targets+=" ${PLUGIN_TARGET}_CLAP"
+          [[ -n "$TEST_TARGET" ]] && targets+=" $TEST_TARGET"
+          cmake --build --preset release --target $targets -- -k 0
+
+      - name: Test
+        if: env.TEST_TARGET != ''
+        run: ctest --preset release
+
+      - name: Version string
+        run: |
+          full=$(sed -nE 's/^#define PLUGIN_VERSION_FULL "(.*)"/\1/p' build/release/generated/BuildVersion.h)
+          echo "Built version: $full"
+          echo "FULL_VERSION=$full" >> "$GITHUB_ENV"
+
+      # Ad-hoc signatures: enough for the plug-in to load on Apple silicon once the quarantine flag is cleared (see
+      # INSTALL.txt). Developer ID signing and notarisation need a paid Apple developer account. lipo prints the
+      # architectures, as a check that the binary really is universal.
+      - name: Sign (ad hoc)
+        run: |
+          bundles=("$ARTEFACTS/VST3/$PRODUCT_NAME.vst3" "$ARTEFACTS/AU/$PRODUCT_NAME.component")
+          [[ "$BUILD_CLAP" == true ]] && bundles+=("$ARTEFACTS/CLAP/$PRODUCT_NAME.clap")
+          for bundle in "${bundles[@]}"; do
+            codesign --force --deep --sign - "$bundle"
+            lipo -archs "$bundle/Contents/MacOS/$PRODUCT_NAME"
+          done
+
+      - name: pluginval (strictness 8)
+        run: bash tools/run-pluginval.sh "$ARTEFACTS/VST3/$PRODUCT_NAME.vst3"
+
+      # auval only finds AUs that are installed; killing the registrar makes macOS rescan.
+      - name: auval
+        run: |
+          mkdir -p ~/Library/Audio/Plug-Ins/Components
+          cp -R "$ARTEFACTS/AU/$PRODUCT_NAME.component" ~/Library/Audio/Plug-Ins/Components/
+          killall -9 AudioComponentRegistrar 2>/dev/null || true
+          auval -v "$AU_TYPE" "$PLUGIN_CODE" "$MANUFACTURER_CODE"
+
+      # ditto keeps the bundles' symlinks, extended attributes and signatures intact.
+      - name: Zip
+        run: |
+          stage="build/zip/$PRODUCT_NAME"
+          mkdir -p "$stage/VST3" "$stage/AU" dist
+          ditto "$ARTEFACTS/VST3/$PRODUCT_NAME.vst3" "$stage/VST3/$PRODUCT_NAME.vst3"
+          ditto "$ARTEFACTS/AU/$PRODUCT_NAME.component" "$stage/AU/$PRODUCT_NAME.component"
+          if [[ "$BUILD_CLAP" == true ]]; then
+            mkdir -p "$stage/CLAP"
+            ditto "$ARTEFACTS/CLAP/$PRODUCT_NAME.clap" "$stage/CLAP/$PRODUCT_NAME.clap"
+          fi
+          sed -e "s|@PRODUCT_NAME@|$PRODUCT_NAME|g" -e "s|@COMPANY_NAME@|$COMPANY_NAME|g" \
+            packaging/macos/INSTALL.txt > "$stage/INSTALL.txt"
+          ditto -c -k --keepParent "$stage" "dist/$PACKAGE_NAME-$FULL_VERSION-macos-universal.zip"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: ${{ env.PACKAGE_NAME }}-${{ env.FULL_VERSION }}-macos-universal
+          path: dist/*
+          retention-days: 14

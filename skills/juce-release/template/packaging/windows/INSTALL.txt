@@ -1,0 +1,15 @@
+@PRODUCT_NAME@ - manual installation (Windows)
+==============================================
+
+The installer (...-setup.exe) does this for you. To install by hand instead:
+
+  VST3:  copy the folder "@PRODUCT_NAME@.vst3" from VST3\ to
+         C:\Program Files\Common Files\VST3\
+
+  CLAP:  if there is a CLAP\ folder, copy "@PRODUCT_NAME@.clap" from it to
+         C:\Program Files\Common Files\CLAP\
+
+Then start your host and rescan plug-ins if needed (in REAPER: Options > Preferences > Plug-ins > VST > Re-scan).
+
+The plug-in is not code-signed, so Windows SmartScreen may warn about the installer
+("Windows protected your PC"). Choose "More info" > "Run anyway".

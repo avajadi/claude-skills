@@ -1,0 +1,14 @@
+@PRODUCT_NAME@ - installation (Linux)
+=====================================
+
+64-bit x86 build. Needs glibc 2.35 or later (Ubuntu 22.04, Debian 12, Fedora 36 or newer), plus the X11, freetype,
+fontconfig and ALSA libraries that every desktop distribution already has.
+
+Copy the plug-ins into your plug-in folders (create them if they don't exist):
+
+  VST3:  the folder "@PRODUCT_NAME@.vst3"  from VST3/  to  ~/.vst3/
+  CLAP:  "@PRODUCT_NAME@.clap"             from CLAP/  to  ~/.clap/    (if included)
+
+(/usr/lib/vst3/ and /usr/lib/clap/ instead install them for every user.)
+
+Then start your host and rescan plug-ins if needed (in REAPER: Options > Preferences > Plug-ins > VST > Re-scan).

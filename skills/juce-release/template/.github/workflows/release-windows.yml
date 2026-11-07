@@ -1,0 +1,107 @@
+# Windows build, validation and packaging: an installer and a zip, both x64.
+#
+# Run by hand (Actions > Release (Windows) > Run workflow) for a dev package as a downloadable artifact, or called by
+# release.yml for a tag. On a tag, the tag must match the version in CMakeLists.txt.
+name: Release (Windows)
+
+on:
+  workflow_dispatch:
+  workflow_call:
+
+# A literal group: in a called workflow, github.workflow is the caller's name, which would share its group.
+concurrency:
+  group: release-windows-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  windows:
+    runs-on: windows-2022
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: bash # Git Bash, so the scripts match the macOS job
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0 # tags, for the version string
+
+      # tr: Windows runners check files out with CRLF line endings.
+      - name: Load plugin settings
+        run: |
+          grep -vE '^[[:space:]]*(#|$)' packaging/plugin.env | tr -d '\r' >> "$GITHUB_ENV"
+          target=$(grep -E '^PLUGIN_TARGET=' packaging/plugin.env | tr -d '\r' | cut -d= -f2-)
+          echo "ARTEFACTS=build/windows/${target}_artefacts/Release" >> "$GITHUB_ENV"
+
+      - name: Check version
+        run: |
+          version=$(sed -nE 's/^project\([[:space:]]*[A-Za-z0-9_]+[[:space:]]+VERSION[[:space:]]+([0-9.]+).*/\1/p' CMakeLists.txt)
+          echo "CMake project version: $version"
+          if [[ "$GITHUB_REF" == refs/tags/* && "${GITHUB_REF#refs/tags/}" != "v$version" ]]; then
+            echo "::error::Tag ${GITHUB_REF#refs/tags/} does not match the CMake project version $version"
+            exit 1
+          fi
+
+      # Visual Studio generator: multi-config, so the configuration is chosen at build time.
+      - name: Configure
+        run: cmake -S . -B build/windows -G "Visual Studio 17 2022" -A x64 $CMAKE_EXTRA_ARGS
+
+      - name: Build
+        run: |
+          targets="${PLUGIN_TARGET}_VST3"
+          [[ "$BUILD_CLAP" == true ]] && targets+=" ${PLUGIN_TARGET}_CLAP"
+          [[ -n "$TEST_TARGET" ]] && targets+=" $TEST_TARGET"
+          cmake --build build/windows --config Release --parallel --target $targets
+
+      - name: Test
+        if: env.TEST_TARGET != ''
+        run: ctest --test-dir build/windows -C Release --output-on-failure
+
+      - name: Version string
+        run: |
+          full=$(sed -nE 's/^#define PLUGIN_VERSION_FULL "(.*)"/\1/p' build/windows/generated/BuildVersion.h)
+          echo "Built version: $full"
+          echo "FULL_VERSION=$full" >> "$GITHUB_ENV"
+
+      - name: pluginval (strictness 8)
+        run: bash tools/run-pluginval.sh "$ARTEFACTS/VST3/$PRODUCT_NAME.vst3"
+
+      - name: Installer
+        shell: pwsh
+        run: |
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) { choco install innosetup --no-progress -y | Out-Null }
+          $defines = @(
+            "/DAppVersion=$env:FULL_VERSION",
+            "/DAppName=$env:PRODUCT_NAME",
+            "/DPublisher=$env:COMPANY_NAME",
+            "/DAppId=$env:INSTALLER_APP_ID",
+            "/DPackageName=$env:PACKAGE_NAME",
+            "/DBuildDir=$PWD\$($env:ARTEFACTS -replace '/', '\')"
+          )
+          if ($env:BUILD_CLAP -eq 'true') { $defines += '/DWithClap' }
+          & $iscc @defines /Odist packaging\windows\installer.iss
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Zip
+        shell: pwsh
+        run: |
+          $artefacts = $env:ARTEFACTS -replace '/', '\'
+          $stage = "build\zip\$env:PRODUCT_NAME"
+          New-Item -ItemType Directory -Force "$stage\VST3", dist | Out-Null
+          Copy-Item -Recurse "$artefacts\VST3\$env:PRODUCT_NAME.vst3" "$stage\VST3\"
+          if ($env:BUILD_CLAP -eq 'true') {
+            New-Item -ItemType Directory -Force "$stage\CLAP" | Out-Null
+            Copy-Item "$artefacts\CLAP\$env:PRODUCT_NAME.clap" "$stage\CLAP\"
+          }
+          (Get-Content packaging\windows\INSTALL.txt) -replace '@PRODUCT_NAME@', $env:PRODUCT_NAME `
+            -replace '@COMPANY_NAME@', $env:COMPANY_NAME | Set-Content "$stage\INSTALL.txt"
+          Compress-Archive -Path $stage -DestinationPath "dist\$env:PACKAGE_NAME-$env:FULL_VERSION-windows-x64.zip"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: ${{ env.PACKAGE_NAME }}-${{ env.FULL_VERSION }}-windows-x64
+          path: dist/*
+          retention-days: 14

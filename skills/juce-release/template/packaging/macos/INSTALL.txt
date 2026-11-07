@@ -1,0 +1,23 @@
+@PRODUCT_NAME@ - installation (macOS)
+=====================================
+
+Universal build: runs natively on Apple silicon and Intel Macs, macOS 11 or later.
+
+1. Copy the plug-ins into your plug-in folders (create them if they don't exist):
+
+     VST3:  "@PRODUCT_NAME@.vst3"       from VST3/  to  ~/Library/Audio/Plug-Ins/VST3/
+     AU:    "@PRODUCT_NAME@.component"  from AU/    to  ~/Library/Audio/Plug-Ins/Components/
+     CLAP:  "@PRODUCT_NAME@.clap"       from CLAP/  to  ~/Library/Audio/Plug-Ins/CLAP/   (if included)
+
+   In Finder, press Cmd+Shift+G and paste the folder path to get there. (/Library/Audio/Plug-Ins/... instead
+   installs them for every user on the Mac.)
+
+2. Clear the quarantine flag. The plug-in is not notarised by Apple, so macOS blocks plug-ins downloaded from the
+   internet until this is done. In Terminal:
+
+     xattr -dr com.apple.quarantine ~/Library/Audio/Plug-Ins/VST3/"@PRODUCT_NAME@.vst3"
+     xattr -dr com.apple.quarantine ~/Library/Audio/Plug-Ins/Components/"@PRODUCT_NAME@.component"
+     xattr -dr com.apple.quarantine ~/Library/Audio/Plug-Ins/CLAP/"@PRODUCT_NAME@.clap"
+
+3. Start your host and rescan plug-ins if needed (in REAPER: REAPER > Settings > Plug-ins > VST > Re-scan).
+   Some hosts need a restart to find a new AU.

@@ -1,0 +1,101 @@
+# Linux build, validation and packaging: a zip with x64 VST3 (and CLAP when enabled).
+#
+# Run by hand (Actions > Release (Linux) > Run workflow) for a dev package as a downloadable artifact, or called by
+# release.yml for a tag. On a tag, the tag must match the version in CMakeLists.txt.
+name: Release (Linux)
+
+on:
+  workflow_dispatch:
+  workflow_call:
+
+# A literal group: in a called workflow, github.workflow is the caller's name, which would share its group.
+concurrency:
+  group: release-linux-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  linux:
+    # The oldest supported Ubuntu on purpose: a Linux binary needs at least the glibc it was built against, so
+    # building on an older system lets the plug-in load on more distributions (glibc 2.35 and later here).
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0 # tags, for the version string
+
+      - name: Load plugin settings
+        run: |
+          grep -vE '^[[:space:]]*(#|$)' packaging/plugin.env | tr -d '\r' >> "$GITHUB_ENV"
+          target=$(grep -E '^PLUGIN_TARGET=' packaging/plugin.env | tr -d '\r' | cut -d= -f2-)
+          echo "ARTEFACTS=build/release/${target}_artefacts/Release" >> "$GITHUB_ENV"
+
+      - name: Check version
+        run: |
+          version=$(sed -nE 's/^project\([[:space:]]*[A-Za-z0-9_]+[[:space:]]+VERSION[[:space:]]+([0-9.]+).*/\1/p' CMakeLists.txt)
+          echo "CMake project version: $version"
+          if [[ "$GITHUB_REF" == refs/tags/* && "${GITHUB_REF#refs/tags/}" != "v$version" ]]; then
+            echo "::error::Tag ${GITHUB_REF#refs/tags/} does not match the CMake project version $version"
+            exit 1
+          fi
+
+      # The libraries JUCE needs on Linux, and Xvfb: pluginval opens the editor, which needs an X display.
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ninja-build xvfb \
+            libasound2-dev libjack-jackd2-dev libfreetype-dev libfontconfig1-dev \
+            libx11-dev libxcomposite-dev libxcursor-dev libxext-dev libxi-dev libxinerama-dev \
+            libxrandr-dev libxrender-dev libgl-dev libegl-dev
+
+      - name: Configure
+        run: cmake --preset release $CMAKE_EXTRA_ARGS
+
+      # -k 0: keep going after a failed file, so one run reports every compile error.
+      - name: Build
+        run: |
+          targets="${PLUGIN_TARGET}_VST3"
+          [[ "$BUILD_CLAP" == true ]] && targets+=" ${PLUGIN_TARGET}_CLAP"
+          [[ -n "$TEST_TARGET" ]] && targets+=" $TEST_TARGET"
+          cmake --build --preset release --target $targets -- -k 0
+
+      - name: Test
+        if: env.TEST_TARGET != ''
+        run: ctest --preset release
+
+      - name: Version string
+        run: |
+          full=$(sed -nE 's/^#define PLUGIN_VERSION_FULL "(.*)"/\1/p' build/release/generated/BuildVersion.h)
+          echo "Built version: $full"
+          echo "FULL_VERSION=$full" >> "$GITHUB_ENV"
+
+      # Prints the newest glibc symbol version the binary needs: the oldest glibc it will load with.
+      - name: Check glibc requirement
+        run: |
+          so="$ARTEFACTS/VST3/$PRODUCT_NAME.vst3/Contents/x86_64-linux/$PRODUCT_NAME.so"
+          objdump -T "$so" | grep -oE 'GLIBC_[0-9.]+' | sort -uV | tail -1
+
+      - name: pluginval (strictness 8)
+        run: xvfb-run -a bash tools/run-pluginval.sh "$ARTEFACTS/VST3/$PRODUCT_NAME.vst3"
+
+      - name: Zip
+        run: |
+          stage="build/zip/$PRODUCT_NAME"
+          mkdir -p "$stage/VST3" dist
+          cp -a "$ARTEFACTS/VST3/$PRODUCT_NAME.vst3" "$stage/VST3/"
+          if [[ "$BUILD_CLAP" == true ]]; then
+            mkdir -p "$stage/CLAP"
+            cp -a "$ARTEFACTS/CLAP/$PRODUCT_NAME.clap" "$stage/CLAP/"
+          fi
+          sed -e "s|@PRODUCT_NAME@|$PRODUCT_NAME|g" -e "s|@COMPANY_NAME@|$COMPANY_NAME|g" \
+            packaging/linux/INSTALL.txt > "$stage/INSTALL.txt"
+          (cd build/zip && zip -qr "../../dist/$PACKAGE_NAME-$FULL_VERSION-linux-x64.zip" "$PRODUCT_NAME")
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: ${{ env.PACKAGE_NAME }}-${{ env.FULL_VERSION }}-linux-x64
+          path: dist/*
+          retention-days: 14

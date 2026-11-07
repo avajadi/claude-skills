@@ -5,7 +5,7 @@ Eddie's personal Claude Code skills. The originals live here; Claude Code finds 
 
 | Skill | What it does |
 |---|---|
-| [`juce-release`](skills/juce-release/SKILL.md) | Prepares and publishes a release of a JUCE plug-in built with the juce-github-ci template. |
+| [`juce-release`](skills/juce-release/SKILL.md) | Sets up GitHub Actions CI and release builds (Windows, macOS, Linux) for a JUCE plug-in repo from the bundled template, and prepares and publishes releases. |
 
 ## Installing
 
