@@ -1,11 +1,11 @@
 # Claude Code skills
 
-Eddie's personal Claude Code skills. The originals live here; Claude Code finds them through symlinks in
+Claude Code skills by Eddie Bassey Olsson. The originals live here; Claude Code finds them through symlinks in
 `~/.claude/skills/`.
 
 | Skill | What it does |
 |---|---|
-| [`juce-release`](skills/juce-release/SKILL.md) | Sets up GitHub Actions CI and release builds (Windows, macOS, Linux) for a JUCE plug-in repo from the bundled template, and prepares and publishes releases. |
+| [`juce-release`](skills/juce-release/SKILL.md) | Sets up GitHub Actions CI and release builds (Windows, macOS, Linux) for a JUCE plug-in repo from the bundled template, prepares and publishes releases, and builds the stand-alone `juce-github-ci.zip` template package (`package.sh`). |
 
 ## Installing
 
@@ -21,3 +21,9 @@ reports those and skips them. Run it again after adding a skill.
 
 Create `skills/<name>/SKILL.md` with `name` and `description` frontmatter, run `./link.sh`, and start a new Claude
 Code session. Edit skills here, not through the symlink's target path elsewhere.
+
+## License
+
+MIT, see [`LICENSE`](LICENSE). The JUCE CI template in `skills/juce-release/template/` is MIT No Attribution
+([`TEMPLATE-LICENSE`](skills/juce-release/TEMPLATE-LICENSE)), so its files can be copied into any project without
+keeping a notice.

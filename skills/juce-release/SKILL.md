@@ -1,6 +1,6 @@
 ---
 name: juce-release
-description: Set up GitHub Actions CI and release builds (Windows, macOS, Linux) for a JUCE plug-in repo from the bundled template, and prepare and publish releases of plug-ins that use it (Drum Strip, Gated Scatter Verb and later plug-ins). Use when asked to add CI, GitHub Actions or release builds to a JUCE plug-in, or to release, cut, tag or publish a new version of one.
+description: Set up GitHub Actions CI and release builds (Windows, macOS, Linux) for a JUCE plug-in repo from the bundled template, and prepare and publish releases of plug-ins that use it. Use when asked to add CI, GitHub Actions or release builds to a JUCE plug-in, or to release, cut, tag or publish a new version of one, or to make the stand-alone JUCE CI template package (juce-github-ci.zip).
 ---
 
 # JUCE plug-in CI and releases
@@ -29,8 +29,8 @@ Costs: in a private repo, Windows minutes count double and macOS minutes ten tim
   CLAP support, and copy-after-build settings.
 - Check what already exists: `.github/workflows/`, `CMakePresets.json`, `.gitattributes`, `CLAUDE.md`,
   `.claude/settings.json`, `packaging/`, `tools/`, `cmake/`.
-- Check `git status`, and that the repo is personal or work as expected. Personal repos need the private git
-  identity (see the user's CLAUDE.md) before any commit.
+- Check `git status`, and check that `git config user.name` and `user.email` are what the user wants for this
+  repo before any commit. Follow any git identity rules in the user's own instructions.
 
 ### A2. Copy the template
 
@@ -66,7 +66,7 @@ Follow `examples/CMakeLists-snippets.cmake`. Show the diff before writing. The w
 
 Recommended, not in the snippets: strict warnings on the project's own sources only, so local builds catch what
 MSVC and Apple Clang flag (JUCE's module sources are compiled in the same targets and must not get `-Werror`).
-Gated Scatter Verb does it like this:
+For example:
 
 ```cmake
 if(MSVC)
@@ -92,8 +92,8 @@ pre-commit hook uses it, and it is closer to Apple Clang.
 
 ### A6. Hand over
 
-Summarise what was copied, merged and changed, and give the commit and push commands (with the private git
-identity lines first for a personal repo). The workflows must reach the default branch before *Run workflow*
+Summarise what was copied, merged and changed, and give the commit and push commands (with any git identity
+settings the repo needs first). The workflows must reach the default branch before *Run workflow*
 appears. Suggest a dry run per platform (Actions → *Release (Windows)* → *Run workflow*, then macOS and Linux)
 but don't start one without asking. Mention `CHANGELOG.md` in Keep a Changelog style: a `## [x.y.z]` section
 becomes the release notes.
@@ -111,7 +111,7 @@ Read the repo's `CLAUDE.md` and the "Releasing" section of its `README.md` first
 ### B2. Check the tree
 
 - `git status`: the working tree must be clean apart from the release changes. Uncommitted changes that aren't
-  part of the release (for example, from Claude Design in drum-strip) are a reason to stop and ask.
+  part of the release (for example, from another tool or session) are a reason to stop and ask.
 - You must be on `main`, up to date with `origin/main`.
 - The release workflows (`release.yml` and `release-{windows,macos,linux}.yml`) must exist on `origin/main`
   (`git ls-tree origin/main .github/workflows/`).
@@ -163,8 +163,19 @@ git push origin vx.y.z
 Only after all three platforms and the publish job have passed: give the release URL
 (`gh release view vx.y.z --json url -q .url`) and list the assets. Don't call the release done before that.
 
-## Keeping the template in step
+## The template is the only copy
 
-`template/` is a copy of `~/avajadisandbox/juce-github-ci` (minus its README, which is
-`references/template-README.md`). A fix made in a plug-in repo's CI files belongs in the template too; check
-with `diff -r` against the repo.
+`template/` and `references/template-README.md` are the one source of the JUCE CI template. Plug-in repos set up
+from it keep their own copies of the files; a fix made in a plug-in repo's CI files belongs here too, and the other
+way round. Compare with `diff -r <skill dir>/template <repo>`.
+
+The template is licensed MIT-0 (`TEMPLATE-LICENSE`), so the files can go into any project without a notice. Don't
+copy `TEMPLATE-LICENSE` into a plug-in repo: the repo keeps its own license.
+
+## Part C: make a stand-alone package
+
+For someone who wants the files rather than the skill, run `<skill dir>/package.sh [output.zip]`. It writes
+`juce-github-ci.zip` with the files from `template/`, `references/template-README.md` as `README.md`,
+`TEMPLATE-LICENSE` as `LICENSE`, and a `README.pdf` when `MD2PDF` names a Markdown-to-PDF command (called as
+`$MD2PDF README.md`, writing `README.pdf` next to it). Without `MD2PDF` the package has no PDF. When the template
+changes, bump the `version:` in the README's front matter before packaging.

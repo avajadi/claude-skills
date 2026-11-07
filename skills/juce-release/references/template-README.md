@@ -8,7 +8,7 @@ machines. It validates the plug-in with pluginval and auval and packages it for 
 Windows zip, a universal macOS zip (Apple silicon and Intel in one binary) and a Linux zip. Push a version tag and it
 publishes them all as a GitHub Release. You don't need a Mac or a Windows box.
 
-I use it for my own plug-ins (Drum Strip and Gated Scatter Verb), and it's running green on both platforms. This
+I use it for my own plug-ins, and it's running green on all three platforms. This
 copy is generalised: everything specific to one plug-in lives in a single settings file, `packaging/plugin.env`.
 
 ## What's in the package
@@ -191,3 +191,8 @@ tools/run-pluginval.sh "build/release/MyPlugin_artefacts/Release/VST3/My Plugin.
 
 `run-pluginval.sh` uses `$PLUGINVAL` or a `pluginval` on your `PATH` if there is one. Otherwise it downloads the
 latest release into `build/_tools`.
+
+## License
+
+MIT No Attribution (MIT-0), see `LICENSE`: use, change and copy these files into your own projects, open source or
+not, without keeping a copyright notice.
